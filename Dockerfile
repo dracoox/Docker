@@ -1,18 +1,60 @@
 FROM ubuntu:22.04
 
-# Install dependencies
-RUN apt update && \
-    apt install -y software-properties-common wget curl git openssh-client tmate python3 && \
-    apt clean
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Create a dummy index page to keep the service alive
-RUN mkdir -p /app && echo "Tmate Session Running..." > /app/index.html
-WORKDIR /app
+# Update system and install required packages
+RUN apt update && apt install -y \
+    software-properties-common \
+    wget curl git gnupg2 net-tools sudo dbus-x11 \
+    openssh-client tmate \
+    python3 python3-pip \
+    ffmpeg npm \
+    gnome-session gnome-terminal gdm3 \
+    x11vnc xvfb \
+    tigervnc-standalone-server \
+    && apt clean && rm -rf /var/lib/apt/lists/*
 
-# Expose a fake web port to trick Railway into keeping container alive
-EXPOSE 6080
+# Create a non-root user for GUI sessions
+RUN useradd -m docker && echo "docker:docker" | chpasswd && adduser docker sudo
 
-# Start a dummy Python web server to keep Railway service active
-# and start tmate session
-CMD python3 -m http.server 6080 & \
-    tmate -F
+# Set up persistent home directory
+USER docker
+WORKDIR /home/docker
+
+# Create persistent VNC password
+RUN mkdir -p /home/docker/.vnc && \
+    echo "vncpass" | vncpasswd -f > /home/docker/.vnc/passwd && \
+    chmod 600 /home/docker/.vnc/passwd
+
+# Add startup script for GNOME + VNC + message printing
+RUN mkdir -p /home/docker/app && \
+    echo '#!/bin/bash\n\
+export DISPLAY=:1\n\
+echo "Starting Xvfb..."\n\
+Xvfb :1 -screen 0 1920x1080x24 &\n\
+sleep 2\n\
+echo "Starting GNOME session..."\n\
+gnome-session &\n\
+sleep 5\n\
+echo "Starting x11vnc server..."\n\
+x11vnc -display :1 -forever -usepw -shared -nopw &\n\
+sleep 3\n\
+echo "GNOME Desktop is ready!"\n\
+echo "--------------------------------------------------"\n\
+echo "✅ VNC Server running on port 5901"\n\
+echo "🔑 VNC password: vncpass"\n\
+echo "💻 To connect: vncviewer <host-ip>:5901"\n\
+echo "--------------------------------------------------"\n\
+echo "Starting dummy web server..."\n\
+cd /home/docker/app && python3 -m http.server 6080 &\n\
+echo "Waiting for tmate session..."\n\
+tmate -F\n' > /home/docker/app/startup.sh && chmod +x /home/docker/app/startup.sh
+
+# Create dummy web file
+RUN echo "Tmate & GNOME VNC Session Running..." > /home/docker/app/index.html
+
+# Expose ports
+EXPOSE 5901 6080
+
+# Default command: run everything and show connection info
+CMD /home/docker/app/startup.sh
