@@ -2,55 +2,41 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install dependencies
-RUN apt update && apt install -y \
-    git wget curl sudo net-tools dbus-x11 gnupg2 \
-    python3 python3-pip openssh-client tmate \
-    ffmpeg npm \
-    gnome-session gnome-terminal gdm3 \
-    x11vnc xvfb tigervnc-standalone-server unzip \
-    && apt clean && rm -rf /var/lib/apt/lists/*
+# Install all needed packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    wget curl git openssh-client tmate \
+    python3 python3-pip ffmpeg \
+    netcat procps iputils-ping \
+    ca-certificates tzdata unzip zip \
+    vim nano less htop jq \
+    build-essential locales rsync screen \
+    sudo gnupg lsb-release dialog socat mc \
+    tree inetutils-tools gettext-base openssl dnsutils \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Setup VNC password
-RUN mkdir -p /root/.vnc && \
-    echo "yourvncpassword" | vncpasswd -f > /root/.vnc/passwd && \
-    chmod 600 /root/.vnc/passwd
+# Install Node.js 18 and latest npm
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get install -y nodejs && \
+    npm install -g npm@latest && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Clone noVNC and websockify
-RUN mkdir -p /opt/novnc && cd /opt && \
-    git clone https://github.com/novnc/noVNC.git novnc && \
-    git clone https://github.com/novnc/websockify.git novnc/utils/websockify && \
-    chmod +x /opt/novnc/utils/novnc_proxy
+# Set locale
+RUN locale-gen en_US.UTF-8
+ENV LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8
 
-# Dummy index for Render keepalive
-RUN mkdir -p /root/app && echo "Render GNOME Desktop Running..." > /root/app/index.html
+# Create dummy index.html for Render keep-alive
+RUN mkdir -p /app && echo "Tmate Session Running..." > /app/index.html
+WORKDIR /app
 
-# Startup script
-RUN echo '#!/bin/bash\n\
-export DISPLAY=:1\n\
-echo "[+] Starting virtual display..."\n\
-Xvfb :1 -screen 0 1920x1080x24 &\n\
-sleep 2\n\
-echo "[+] Starting GNOME session..."\n\
-gnome-session &\n\
-sleep 5\n\
-echo "[+] Starting VNC server..."\n\
-x11vnc -display :1 -forever -usepw -shared -rfbport 5901 &\n\
-sleep 3\n\
-echo "[+] Starting noVNC on port 6080..."\n\
-/opt/novnc/utils/novnc_proxy --vnc localhost:5901 --listen 6080 &\n\
-echo "--------------------------------------------------"\n\
-echo "✅ GNOME Desktop is running!"\n\
-echo "🌐 Open in your browser: https://<your-render-url>"\n\
-echo "🔑 VNC password (if asked): yourvncpassword"\n\
-echo "--------------------------------------------------"\n\
-echo "[+] Starting dummy web server to keep container alive..."\n\
-cd /root/app && python3 -m http.server 8888 &\n\
-echo "[+] Starting tmate..."\n\
-tmate -F\n' > /root/app/startup.sh && chmod +x /root/app/startup.sh
+# Generate SSH key (required by tmate) during build
+RUN mkdir -p /root/.ssh && \
+    ssh-keygen -t rsa -f /root/.ssh/id_rsa -N '' && \
+    chmod 700 /root/.ssh && \
+    chmod 600 /root/.ssh/id_rsa
 
-# Expose ports for noVNC and dummy HTTP
-EXPOSE 6080 8888
+# Expose dummy web port to keep container active
+EXPOSE 6080
 
-# Run startup script
-CMD ["/root/app/startup.sh"]
+# Run a dummy HTTP server and start tmate in foreground (clean new session)
+CMD python3 -m http.server 6080 & tmate -F
