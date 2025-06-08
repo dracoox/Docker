@@ -2,15 +2,13 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install all required packages
+# Install dependencies
 RUN apt update && apt install -y \
-    wget curl git sudo net-tools dbus-x11 gnupg2 \
+    git wget curl sudo net-tools dbus-x11 gnupg2 \
     python3 python3-pip openssh-client tmate \
     ffmpeg npm \
     gnome-session gnome-terminal gdm3 \
-    x11vnc xvfb \
-    tigervnc-standalone-server \
-    unzip \
+    x11vnc xvfb tigervnc-standalone-server unzip \
     && apt clean && rm -rf /var/lib/apt/lists/*
 
 # Setup VNC password
@@ -18,15 +16,13 @@ RUN mkdir -p /root/.vnc && \
     echo "yourvncpassword" | vncpasswd -f > /root/.vnc/passwd && \
     chmod 600 /root/.vnc/passwd
 
-# Install noVNC and websockify
+# Clone noVNC and websockify
 RUN mkdir -p /opt/novnc && cd /opt && \
-    wget https://github.com/novnc/noVNC/archive/refs/heads/master.zip && \
-    unzip master.zip && mv noVNC-master novnc && \
-    wget https://github.com/novnc/websockify/archive/refs/heads/master.zip && \
-    unzip master.zip && mv websockify-master /opt/novnc/utils/websockify && \
+    git clone https://github.com/novnc/noVNC.git novnc && \
+    git clone https://github.com/novnc/websockify.git novnc/utils/websockify && \
     chmod +x /opt/novnc/utils/novnc_proxy
 
-# Dummy HTML file to keep Render alive
+# Dummy index for Render keepalive
 RUN mkdir -p /root/app && echo "Render GNOME Desktop Running..." > /root/app/index.html
 
 # Startup script
@@ -45,7 +41,7 @@ echo "[+] Starting noVNC on port 6080..."\n\
 /opt/novnc/utils/novnc_proxy --vnc localhost:5901 --listen 6080 &\n\
 echo "--------------------------------------------------"\n\
 echo "✅ GNOME Desktop is running!"\n\
-echo "🌐 Open in your browser: https://<your-render-url> (or assigned domain)"\n\
+echo "🌐 Open in your browser: https://<your-render-url>"\n\
 echo "🔑 VNC password (if asked): yourvncpassword"\n\
 echo "--------------------------------------------------"\n\
 echo "[+] Starting dummy web server to keep container alive..."\n\
@@ -53,8 +49,8 @@ cd /root/app && python3 -m http.server 8888 &\n\
 echo "[+] Starting tmate..."\n\
 tmate -F\n' > /root/app/startup.sh && chmod +x /root/app/startup.sh
 
-# Expose required port
-EXPOSE 6080
+# Expose ports for noVNC and dummy HTTP
+EXPOSE 6080 8888
 
-# Launch everything
+# Run startup script
 CMD ["/root/app/startup.sh"]
